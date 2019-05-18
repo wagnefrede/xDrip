@@ -24,6 +24,7 @@ import android.preference.PreferenceManager;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationManagerCompat;
 import android.text.SpannableString;
+import android.widget.RemoteViews;
 
 import com.eveningoutpost.dexdrip.AddCalibration;
 import com.eveningoutpost.dexdrip.BestGlucose;
@@ -613,8 +614,6 @@ public class Notifications extends IntentService {
                 .setSmallIcon(R.drawable.ic_action_communication_invert_colors_on)
                 .setUsesChronometer(false);
 
-        boolean setLargeIcon = false;
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // in case the graphic crashes the system-ui we wont do it immediately after reboot so the
             // user has a chance to disable the feature
@@ -629,21 +628,11 @@ public class Notifications extends IntentService {
 
                 if (NumberGraphic.largeWithArrowEnabled()) {
                     if ((dg != null) && (!dg.isStale())) {
-                        final Bitmap icon_bitmap = NumberGraphic.getLargeWithArrowBitmap(dg.unitized, dg.delta_arrow);
-                        //if (icon_bitmap != null) b.setSmallIcon(Icon.createWithBitmap(icon_bitmap));
-                        if (icon_bitmap != null) {
-                            b.setLargeIcon(Icon.createWithBitmap(icon_bitmap));
-                            setLargeIcon = true;
-                        }
+                        iconBitmap = NumberGraphic.getLargeWithArrowBitmap(dg.unitized, dg.delta_arrow);
                     }
                 } else if (NumberGraphic.largeNumberIconEnabled()) {
                     if ((dg != null) && (!dg.isStale())) {
-                        final Bitmap icon_bitmap = NumberGraphic.getLargeIconBitmap(dg.unitized);
-                        //if (icon_bitmap != null) b.setSmallIcon(Icon.createWithBitmap(icon_bitmap));
-                        if (icon_bitmap != null) {
-                            b.setLargeIcon(Icon.createWithBitmap(icon_bitmap));
-                            setLargeIcon = true;
-                        }
+                        iconBitmap = NumberGraphic.getLargeIconBitmap(dg.unitized);
                     }
                 }
             }
@@ -656,15 +645,17 @@ public class Notifications extends IntentService {
                     : bgGraphBuilder.unitizedDeltaString(true, true)));
 
             b.setContentText(deltaString);
+            if (iconBitmap == null)
             iconBitmap = new BgSparklineBuilder(mContext)
                     .setHeight(64)
-                    .setWidth(64)
+                    .showHighLine()
+                    .showLowLine()
                     .setStart(System.currentTimeMillis() - 60000 * 60 * 3)
                     .setBgGraphBuilder(bgGraphBuilder)
                     .setBackgroundColor(getCol(X.color_notification_chart_background))
                     .build();
-            if (!setLargeIcon) b.setLargeIcon(iconBitmap);
-            Notification.BigPictureStyle bigPictureStyle = new Notification.BigPictureStyle();
+
+            Notification.DecoratedCustomViewStyle customViewStyle = new Notification.DecoratedCustomViewStyle();
             notifiationBitmap = new BgSparklineBuilder(mContext)
                     .setBgGraphBuilder(bgGraphBuilder)
                     .showHighLine()
@@ -674,12 +665,24 @@ public class Notifications extends IntentService {
                     .setBackgroundColor(getCol(X.color_notification_chart_background))
                     .setShowFiltered(DexCollectionType.hasFiltered() && Pref.getBooleanDefaultFalse("show_filtered_curve"))
                     .build();
-            bigPictureStyle.bigPicture(notifiationBitmap)
-                    .setSummaryText(deltaString)
-                    .setBigContentTitle(titleString);
-            b.setStyle(bigPictureStyle);
 
-        }
+            RemoteViews collapsedViews = new RemoteViews(context.getPackageName(), R.layout.notification_bg_collapsed);
+            collapsedViews.setImageViewBitmap(R.id.notification_image, iconBitmap);
+            collapsedViews.setTextViewText(R.id.notification_title, titleString);
+            collapsedViews.setTextViewText(R.id.notification_summary, deltaString);
+
+            RemoteViews expandedViews = new RemoteViews(context.getPackageName(), R.layout.notification_bg_expanded);
+            expandedViews.setImageViewBitmap(R.id.notification_image, notifiationBitmap);
+            expandedViews.setTextViewText(R.id.notification_title, titleString);
+            expandedViews.setTextViewText(R.id.notification_summary, deltaString);
+
+            b.setStyle(customViewStyle)
+                    .setCustomContentView(collapsedViews)
+                    .setCustomBigContentView(expandedViews);
+
+        } else if (iconBitmap != null)
+            b.setLargeIcon(Icon.createWithBitmap(iconBitmap));
+
         b.setContentIntent(resultPendingIntent);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
             b.setLocalOnly(true);
